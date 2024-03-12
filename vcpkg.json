@@ -1,0 +1,6 @@
+{
+    "dependencies": [
+        "libsodium",
+        "pybind11"
+    ]
+}

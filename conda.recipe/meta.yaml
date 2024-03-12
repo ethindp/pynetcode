@@ -1,0 +1,28 @@
+package:
+  name: netcode
+  version: 0.0.1
+
+source:
+  path: ..
+
+build:
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vvv
+
+requirements:
+  build:
+    - "{{ compiler('cxx') }}"
+    - "{{ compiler('c') }}"
+    - cmake
+    - ninja
+
+  host:
+    - python
+    - pip !=22.1.0
+
+  run:
+    - python
+
+about:
+  summary: Netcode bindings for Python
+  license_file: LICENSE
