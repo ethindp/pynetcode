@@ -7,6 +7,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
+#include <optional>
 
 namespace py = pybind11;
 
@@ -29,9 +30,12 @@ netcode_client_destroy(this->client);
 }
 }
 
-void Client::connect(const std::array<std::uint8_t, NETCODE_CONNECT_TOKEN_BYTES>& token) {
+void Client::connect(const py::buffer& token) {
 if (this->client) {
-return netcode_client_connect(this->client, const_cast<std::uint8_t*>(token.data()));
+if (token.request().size != NETCODE_CONNECT_TOKEN_BYTES) {
+throw std::runtime_error(std::format("Token must be exactly {} bytes in size", NETCODE_CONNECT_TOKEN_BYTES));
+}
+return netcode_client_connect(this->client, static_cast<std::uint8_t*>(token.request().ptr));
 }
 throw std::runtime_error("Managed to call this function without a valid client pointer! This is a bug!");
 }
@@ -64,11 +68,14 @@ throw std::runtime_error("Managed to call this function without a valid client p
 }
 }
 
-std::tuple<py::bytes, int, std::uint64_t> Client::receive_packet() const {
+std::optional<std::tuple<py::bytes, int, std::uint64_t>> Client::receive_packet() const {
 if (this->client) {
 int bytes;
 std::uint64_t seq;
 const auto* data = netcode_client_receive_packet(client, &bytes, &seq);
+if (!data) {
+return std::nullopt;
+}
 std::string py_data;
 py_data.reserve(bytes);
 std::copy(data, data + bytes, std::back_inserter(py_data));
@@ -198,6 +205,9 @@ throw std::runtime_error("Managed to call this function without a valid server p
 
 void Server::update(const double time) {
 if (this->server) {
+if (!running()) {
+throw std::runtime_error("Server is not running");
+}
 return netcode_server_update(this->server, time);
 }
 throw std::runtime_error("Managed to call this function without a valid server pointer! This is a bug!");
@@ -205,6 +215,9 @@ throw std::runtime_error("Managed to call this function without a valid server p
 
 int Server::client_connected(const int id) const {
 if (this->server) {
+if (!running()) {
+throw std::runtime_error("Server is not running");
+}
 return netcode_server_client_connected(this->server, id);
 }
 throw std::runtime_error("Managed to call this function without a valid server pointer! This is a bug!");
@@ -212,6 +225,9 @@ throw std::runtime_error("Managed to call this function without a valid server p
 
 std::uint64_t Server::client_id(const int index) const {
 if (this->server) {
+if (!running()) {
+throw std::runtime_error("Server is not running");
+}
 return netcode_server_client_id(this->server, index);
 }
 throw std::runtime_error("Managed to call this function without a valid server pointer! This is a bug!");
@@ -219,6 +235,9 @@ throw std::runtime_error("Managed to call this function without a valid server p
 
 std::string Server::client_address(const int index) const {
 if (this->server) {
+if (!running()) {
+throw std::runtime_error("Server is not running");
+}
 auto* address = netcode_server_client_address(this->server, index);
 char buffer[256];
 netcode_address_to_string(address, buffer);
@@ -229,6 +248,9 @@ throw std::runtime_error("Managed to call this function without a valid server p
 
 void Server::disconnect_client(const int index) {
 if (this->server) {
+if (!running()) {
+throw std::runtime_error("Server is not running");
+}
 return netcode_server_disconnect_client(this->server, index);
 }
 throw std::runtime_error("Managed to call this function without a valid server pointer! This is a bug!");
@@ -236,6 +258,9 @@ throw std::runtime_error("Managed to call this function without a valid server p
 
 void Server::disconnect_all_clients() {
 if (this->server) {
+if (!running()) {
+throw std::runtime_error("Server is not running");
+}
 return netcode_server_disconnect_all_clients(this->server);
 }
 throw std::runtime_error("Managed to call this function without a valid server pointer! This is a bug!");
@@ -243,6 +268,9 @@ throw std::runtime_error("Managed to call this function without a valid server p
 
 std::uint64_t Server::next_packet_sequence(const int index) const {
 if (this->server) {
+if (!running()) {
+throw std::runtime_error("Server is not running");
+}
 return netcode_server_next_packet_sequence(this->server, index);
 }
 throw std::runtime_error("Managed to call this function without a valid server pointer! This is a bug!");
@@ -250,6 +278,9 @@ throw std::runtime_error("Managed to call this function without a valid server p
 
 void Server::send_packet(const int index, const py::buffer& buf) {
 if (this->server) {
+if (!running()) {
+throw std::runtime_error("Server is not running");
+}
 if (buf) {
 if (buf.is_none()) {
 return; // Do nothing
@@ -262,15 +293,28 @@ throw std::runtime_error("Managed to call this function without a valid server p
 }
 }
 
-std::tuple<py::bytes, int, std::uint64_t> Server::receive_packet(const int index) const {
+std::optional<std::tuple<py::bytes, int, std::uint64_t>> Server::receive_packet(const int index) const {
 if (this->server) {
+if (!running()) {
+throw std::runtime_error("Server is not running");
+}
+if (!client_connected(index)) {
+throw std::runtime_error(std::format("Client {} is not connected", index));
+}
+if (index < 0 || index > max_clients()) {
+throw std::runtime_error(std::format("Client index out of range: index must be in range [0, {}]", max_clients()));
+}
 int bytes;
 std::uint64_t seq;
 const auto* data = netcode_server_receive_packet(this->server, index, &bytes, &seq);
+if (!data) {
+return std::nullopt;
+}
 std::string py_data;
 py_data.reserve(bytes);
 std::copy(data, data + bytes, std::back_inserter(py_data));
 netcode_server_free_packet(this->server, static_cast<void*>(const_cast<std::uint8_t*>(data)));
+py_data.shrink_to_fit();
 return std::make_tuple(py_data, bytes, seq);
 } else {
 throw std::runtime_error("Managed to call this function without a valid server pointer! This is a bug!");
@@ -279,6 +323,9 @@ throw std::runtime_error("Managed to call this function without a valid server p
 
 int Server::num_connected_clients() const {
 if (this->server) {
+if (!running()) {
+throw std::runtime_error("Server is not running");
+}
 return netcode_server_num_connected_clients(this->server);
 }
 throw std::runtime_error("Managed to call this function without a valid server pointer! This is a bug!");
@@ -286,6 +333,9 @@ throw std::runtime_error("Managed to call this function without a valid server p
 
 void Server::connect_loopback_client(const int index, const std::uint64_t id) {
 if (this->server) {
+if (!running()) {
+throw std::runtime_error("Server is not running");
+}
 return netcode_server_connect_loopback_client(this->server, index, id, nullptr);
 }
 throw std::runtime_error("Managed to call this function without a valid server pointer! This is a bug!");
@@ -293,6 +343,9 @@ throw std::runtime_error("Managed to call this function without a valid server p
 
 void Server::disconnect_loopback_client(const int index) {
 if (this->server) {
+if (!running()) {
+throw std::runtime_error("Server is not running");
+}
 return netcode_server_disconnect_loopback_client(this->server, index);
 }
 throw std::runtime_error("Managed to call this function without a valid server pointer! This is a bug!");
@@ -300,6 +353,9 @@ throw std::runtime_error("Managed to call this function without a valid server p
 
 std::uint16_t Server::get_port() const {
 if (this->server) {
+if (!running()) {
+throw std::runtime_error("Server is not running");
+}
 return netcode_server_get_port(this->server);
 }
 throw std::runtime_error("Managed to call this function without a valid server pointer! This is a bug!");

@@ -8,6 +8,7 @@
 #include <vector>
 #include "netcode.h"
 #include <functional>
+#include <optional>
 
 class Client {
 private:
@@ -15,11 +16,11 @@ netcode_client_t *client;
 public:
 Client(const std::string_view&, const double);
 ~Client();
-void connect(const std::array<std::uint8_t, NETCODE_CONNECT_TOKEN_BYTES>&);
+void connect(const pybind11::buffer&);
 void update(const double);
 std::uint64_t next_packet_sequence() const;
 void send_packet(const pybind11::buffer&);
-std::tuple<pybind11::bytes, int, std::uint64_t> receive_packet() const;
+std::optional<std::tuple<pybind11::bytes, int, std::uint64_t>> receive_packet() const;
 void disconnect();
 int state() const;
 int index() const;
@@ -49,7 +50,7 @@ void disconnect_client(const int);
 void disconnect_all_clients();
 std::uint64_t next_packet_sequence(const int) const;
 void send_packet(const int, const pybind11::buffer&);
-std::tuple<pybind11::bytes, int, std::uint64_t> receive_packet(const int) const;
+std::optional<std::tuple<pybind11::bytes, int, std::uint64_t>> receive_packet(const int) const;
 int num_connected_clients() const;
 void connect_loopback_client(const int, const std::uint64_t);
 void disconnect_loopback_client(const int);
