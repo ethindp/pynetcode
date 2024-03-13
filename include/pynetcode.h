@@ -2,10 +2,12 @@
 #include <cstddef>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/functional.h>
 #include <string_view>
 #include <tuple>
 #include <vector>
 #include "netcode.h"
+#include <functional>
 
 class Client {
 private:
@@ -32,7 +34,8 @@ class Server {
 private:
 netcode_server_t *server;
 public:
-Server(const std::string_view&, const double);
+std::function<void(int, bool)> py_connect_disconnect_cb;
+Server(const std::string_view&, const double, const std::uint64_t, const pybind11::buffer&, const std::function<void(int, bool)>&);
 ~Server();
 void start(const int);
 void stop();
@@ -53,3 +56,4 @@ void disconnect_loopback_client(const int);
 std::uint16_t get_port() const;
 };
 
+void connect_disconnect_cb(void *, int, int);
